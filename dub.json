@@ -4,7 +4,9 @@
   "copyright": "Copyright © 2015, Alexei Bykov",
   "authors": ["Alexei Bykov"],
   "dependencies": {
-    "vibe-d": "~>0.7.24"
+    "vibe-d": "~>0.7.24",
+    "derelict-fi": "~>2.0.2"
   },
-  "versions": ["VibeDefaultMain"]
+  "versions": ["VibeDefaultMain"],
+  "libs": ["Gdi32"]
 }
