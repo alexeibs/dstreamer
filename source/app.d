@@ -1,7 +1,9 @@
+import core.sync.rwmutex;
 import core.sys.windows.windows;
 
 import derelict.freeimage.freeimage;
 
+import vibe.core.log;
 import vibe.http.fileserver;
 import vibe.http.router : URLRouter;
 import vibe.http.server;
@@ -14,18 +16,13 @@ extern (Windows) {
   }
 }
 
-__gshared ubyte[] testImage;
+alias Buffer = ubyte[];
+__gshared Buffer[2] globalBuffers;
+__gshared ReadWriteMutex bufferGuard;
+__gshared int readBuffer = 0;
+__gshared int writeBuffer = 1;
 
-void getIndex(HTTPServerRequest request, HTTPServerResponse response) {
-  response.render!("index.dt", request);
-}
-
-void getImage(HTTPServerRequest request, HTTPServerResponse response) {
-  response.contentType = "image/jpeg";
-  response.bodyWriter.write(testImage);
-}
-
-void takeScreenshots() {
+void takeScreenshot() {
   int screenWidth = GetSystemMetrics(SM_CXSCREEN);
   int screenHeight = GetSystemMetrics(SM_CYSCREEN);
 
@@ -38,7 +35,6 @@ void takeScreenshots() {
   BITMAP winBitmap;
   GetObjectA(hBitmap, BITMAP.sizeof, cast(LPVOID)&winBitmap);
 
-  FreeImage_Initialise();
 
   auto fiBitmap = FreeImage_Allocate(winBitmap.bmWidth, winBitmap.bmHeight, winBitmap.bmBitsPixel);
   int nColors = FreeImage_GetColorsUsed(fiBitmap);
@@ -53,18 +49,49 @@ void takeScreenshots() {
   DeleteDC(hdcScreen);
 
   auto bitmap24 = FreeImage_ConvertTo24Bits(fiBitmap);
-  FreeImage_Save(FIF_JPEG, bitmap24, "test.jpg", JPEG_QUALITYSUPERB | JPEG_OPTIMIZE);
 
+  auto memoryStream = FreeImage_OpenMemory();
+  FreeImage_SaveToMemory(FIF_JPEG, bitmap24, memoryStream, JPEG_QUALITYSUPERB | JPEG_OPTIMIZE);
+  BYTE* data;
+  DWORD size;
+  FreeImage_AcquireMemory(memoryStream, &data, &size);
+
+  globalBuffers[writeBuffer].length = size;
+  for (uint i = 0; i < size; ++i) {
+    globalBuffers[writeBuffer][i] = data[i];
+  }
+
+  FreeImage_CloseMemory(memoryStream);
   FreeImage_Unload(bitmap24);
   FreeImage_Unload(fiBitmap);
-  FreeImage_DeInitialise();
+}
+
+void screenshotThread() {
+  DerelictFI.load();
+  FreeImage_Initialise();
+  while (true) {
+    takeScreenshot();
+    synchronized (bufferGuard.writer) {
+      readBuffer = 1 - readBuffer;
+      writeBuffer = 1 - writeBuffer;
+    }
+  }
+}
+
+void getIndex(HTTPServerRequest request, HTTPServerResponse response) {
+  response.render!("index.dt", request);
+}
+
+void getImage(HTTPServerRequest request, HTTPServerResponse response) {
+  response.contentType = "image/jpeg";
+  synchronized (bufferGuard.reader) {
+    response.bodyWriter.write(globalBuffers[readBuffer]);
+  }
 }
 
 shared static this() {
-  DerelictFI.load();
-  takeScreenshots();
-
-  testImage = cast(ubyte[]) std.file.read("test.jpg");
+  bufferGuard = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
+  new core.thread.Thread(&screenshotThread).start();
 
   auto router = new URLRouter;
   router.get("/", &getIndex);
