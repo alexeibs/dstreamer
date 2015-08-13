@@ -1,0 +1,10 @@
+{
+  "name": "dstreamer",
+  "description": "A minimal D application.",
+  "copyright": "Copyright © 2015, Alexei Bykov",
+  "authors": ["Alexei Bykov"],
+  "dependencies": {
+    "vibe-d": "~>0.7.24"
+  },
+  "versions": ["VibeDefaultMain"]
+}
