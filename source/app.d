@@ -22,7 +22,9 @@ __gshared ReadWriteMutex bufferGuard;
 __gshared int readBuffer = 0;
 __gshared int writeBuffer = 1;
 
-void takeScreenshot() {
+void screenshotThread() {
+  DerelictFI.load();
+  FreeImage_Initialise();
   int screenWidth = GetSystemMetrics(SM_CXSCREEN);
   int screenHeight = GetSystemMetrics(SM_CYSCREEN);
 
@@ -30,52 +32,48 @@ void takeScreenshot() {
   HDC hdcBuffer = CreateCompatibleDC(hdcScreen);
   HBITMAP hBitmap = CreateCompatibleBitmap(hdcScreen, screenWidth, screenHeight);
   auto hOldGdiObject = SelectObject(hdcBuffer, hBitmap);
-  BitBlt(hdcBuffer, 0, 0, screenWidth, screenHeight, hdcScreen, 0, 0, cast(DWORD)0x00CC0020 /*SRCCOPY*/);
 
-  BITMAP winBitmap;
-  GetObjectA(hBitmap, BITMAP.sizeof, cast(LPVOID)&winBitmap);
-
-
-  auto fiBitmap = FreeImage_Allocate(winBitmap.bmWidth, winBitmap.bmHeight, winBitmap.bmBitsPixel);
-  int nColors = FreeImage_GetColorsUsed(fiBitmap);
-  GetDIBits(hdcBuffer, hBitmap, 0, FreeImage_GetHeight(fiBitmap), cast(LPVOID)FreeImage_GetBits(fiBitmap),
-      FreeImage_GetInfo(fiBitmap), 0);
-
-  FreeImage_GetInfoHeader(fiBitmap).biClrUsed = nColors;
-  FreeImage_GetInfoHeader(fiBitmap).biClrImportant = nColors;
-
-  SelectObject(hdcBuffer, hOldGdiObject);
-  DeleteDC(hdcBuffer);
-  DeleteDC(hdcScreen);
-
-  auto bitmap24 = FreeImage_ConvertTo24Bits(fiBitmap);
-
-  auto memoryStream = FreeImage_OpenMemory();
-  FreeImage_SaveToMemory(FIF_JPEG, bitmap24, memoryStream, JPEG_QUALITYSUPERB | JPEG_OPTIMIZE);
-  BYTE* data;
-  DWORD size;
-  FreeImage_AcquireMemory(memoryStream, &data, &size);
-
-  globalBuffers[writeBuffer].length = size;
-  for (uint i = 0; i < size; ++i) {
-    globalBuffers[writeBuffer][i] = data[i];
-  }
-
-  FreeImage_CloseMemory(memoryStream);
-  FreeImage_Unload(bitmap24);
-  FreeImage_Unload(fiBitmap);
-}
-
-void screenshotThread() {
-  DerelictFI.load();
-  FreeImage_Initialise();
   while (true) {
-    takeScreenshot();
+    BitBlt(hdcBuffer, 0, 0, screenWidth, screenHeight, hdcScreen, 0, 0, cast(DWORD)0x00CC0020 /*SRCCOPY*/);
+    BITMAP winBitmap;
+    GetObjectA(hBitmap, BITMAP.sizeof, cast(LPVOID)&winBitmap);
+
+    auto fiBitmap = FreeImage_Allocate(winBitmap.bmWidth, winBitmap.bmHeight, winBitmap.bmBitsPixel);
+    int nColors = FreeImage_GetColorsUsed(fiBitmap);
+    GetDIBits(hdcBuffer, hBitmap, 0, FreeImage_GetHeight(fiBitmap), cast(LPVOID)FreeImage_GetBits(fiBitmap),
+        FreeImage_GetInfo(fiBitmap), 0);
+
+    FreeImage_GetInfoHeader(fiBitmap).biClrUsed = nColors;
+    FreeImage_GetInfoHeader(fiBitmap).biClrImportant = nColors;
+
+    auto bitmap24 = FreeImage_ConvertTo24Bits(fiBitmap);
+
+    auto memoryStream = FreeImage_OpenMemory();
+    FreeImage_SaveToMemory(FIF_JPEG, bitmap24, memoryStream, JPEG_QUALITYSUPERB | JPEG_OPTIMIZE);
+    BYTE* data;
+    DWORD size;
+    FreeImage_AcquireMemory(memoryStream, &data, &size);
+
+    globalBuffers[writeBuffer].length = size;
+    for (uint i = 0; i < size; ++i) {
+      globalBuffers[writeBuffer][i] = data[i];
+    }
+
+    FreeImage_CloseMemory(memoryStream);
+    FreeImage_Unload(bitmap24);
+    FreeImage_Unload(fiBitmap);
+
     synchronized (bufferGuard.writer) {
       readBuffer = 1 - readBuffer;
       writeBuffer = 1 - writeBuffer;
     }
   }
+  /*
+  SelectObject(hdcBuffer, hOldGdiObject);
+  DeleteDC(hdcBuffer);
+  DeleteDC(hdcScreen);
+  FreeImage_DeInitialise();
+  */
 }
 
 void getIndex(HTTPServerRequest request, HTTPServerResponse response) {
@@ -83,9 +81,8 @@ void getIndex(HTTPServerRequest request, HTTPServerResponse response) {
 }
 
 void getImage(HTTPServerRequest request, HTTPServerResponse response) {
-  response.contentType = "image/jpeg";
   synchronized (bufferGuard.reader) {
-    response.bodyWriter.write(globalBuffers[readBuffer]);
+    response.writeBody(globalBuffers[readBuffer], "image/jpeg");
   }
 }
 

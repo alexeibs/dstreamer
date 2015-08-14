@@ -4,5 +4,4 @@ html
     meta(charset='UTF8')
     title DStreamer
   body
-    #content
-      | Hello, world
+    script(type='text/javascript', src='script.js')
