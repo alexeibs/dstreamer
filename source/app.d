@@ -76,11 +76,11 @@ void screenshotThread() {
   */
 }
 
-void getIndex(HTTPServerRequest request, HTTPServerResponse response) {
+void getIndex(scope HTTPServerRequest request, scope HTTPServerResponse response) {
   response.render!("index.dt", request);
 }
 
-void getImage(HTTPServerRequest request, HTTPServerResponse response) {
+void getImage(scope HTTPServerRequest request, scope HTTPServerResponse response) {
   synchronized (bufferGuard.reader) {
     response.writeBody(globalBuffers[readBuffer], "image/jpeg");
   }

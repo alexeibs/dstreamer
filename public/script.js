@@ -9,6 +9,7 @@
   image.onload = function() {
     loading = false;
     ++index;
+    updateImage();
   }
   document.body.appendChild(image);
 
@@ -19,7 +20,6 @@
     }
     fpsDiv.innerHTML = index * 1000 / (+new Date() - startTime);
   }
-  setInterval(updateImage, 40);
 
   fpsDiv = document.createElement('div');
   fpsDiv.style.position = 'absolute';
